@@ -1,226 +1,125 @@
-from rest_framework import status
-from rest_framework.generics import (RetrieveUpdateAPIView, CreateAPIView, UpdateAPIView, ListAPIView) # Noqa E501
-from rest_framework.permissions import AllowAny, IsAuthenticated
-from rest_framework.response import Response
-from django.core.mail import send_mail
-
-from .renderers import UserJSONRenderer
-from .token import account_activation_token
-from .models import User
-from .serializers import (
-    LoginSerializer, RegistrationSerializer, UserSerializer,
-    ResetSerializer
+from django.contrib.auth.models import (
+    AbstractBaseUser, BaseUserManager, PermissionsMixin
 )
-from ...settings import EMAIL_HOST_USER
-from .backends import Authentication
-from django.http import HttpResponse
-from django.contrib.auth.tokens import default_token_generator
-from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
-from django.urls import reverse
-from django.utils.encoding import force_bytes
+from django.db import models
 
 
-class RegistrationAPIView(CreateAPIView):
-    # Allow any user (authenticated or not) to hit this endpoint.
-    permission_classes = (AllowAny,)
-    renderer_classes = (UserJSONRenderer,)
-    serializer_class = RegistrationSerializer
+class UserManager(BaseUserManager):
+    """
+    Django requires that custom users define their own Manager class. By
+    inheriting from `BaseUserManager`, we get a lot of the same code used by
+    Django to create a `User` for free.
 
-    def post(self, request):
-        user = request.data.get('user', {})
-        # The create serializer, validate serializer, save serializer pattern
-        # below is common and you will see it a lot throughout this course and
-        # your own work later on. Get familiar with it.
-        serializer = self.serializer_class(data=user)
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
+    All we have to do is override the `create_user` function which we will use
+    to create `User` objects.
+    """
 
-        user_details = User.objects.get(username=user['username'])
+    def create_user(self, username, email, password=None):
+        """Create and return a `User` with an email, username and password."""
+        if username is None:
+            raise TypeError('Users must have a username.')
 
-        subject = "VERIFY YOUR ACCOUNT"
-        uid = urlsafe_base64_encode(force_bytes(user_details.id)).decode()
-        token = account_activation_token.make_token(user)
-        route = "{}".format(
-            reverse('activate_account', kwargs={
-                'pk': uid,
-                'token': token
-            })
-        )
-        activation_link = (
-            "{scheme}://{host}{path}".format(
-                scheme=request.scheme,
-                host=request.get_host(),
-                path=route,
-            )
-        )
-        message = (
-            "Hi {username},\n\n"
-            "We are glad you have decided to join us. "
-            "Please click the link below to activate you account.\n\n"
-            "{activation_link}".format(
-                username=user.get('username'),
-                activation_link=activation_link,
-            )
-        )
-        from_email = EMAIL_HOST_USER
-        recipient = user.get('email')
-        to_list = [recipient]
-        send_mail(subject, message, from_email, to_list)
-        user_data = serializer.data
+        if email is None:
+            raise TypeError('Users must have an email address.')
 
-        response_message = {
-            "message": (
-                "You have been registered successfully "
-                "please check your email to activate your account"
-            ),
-            "user_data": user_data
+        user = self.model(username=username, email=self.normalize_email(email))
+        user.set_password(password)
+        user.save()
+
+        return user
+
+    def create_superuser(self, username, email, password):
+        """
+        Create and return a `User` with superuser powers.
+
+        Superuser powers means that this use is an admin that can do anything
+        they want.
+        """
+        if password is None:
+            raise TypeError('Superusers must have a password.')
+
+        user = self.create_user(username, email, password)
+        user.is_superuser = True
+        user.is_staff = True
+        user.save()
+
+        return user
+
+
+class User(AbstractBaseUser, PermissionsMixin):
+    # Each `User` needs a human-readable unique identifier that we can use to
+    # represent the `User` in the UI. We want to index this column in the
+    # database to improve lookup performance.
+    username = models.CharField(db_index=True, max_length=255, unique=True)
+
+    # We also need a way to contact the user and a way for the user to identify
+    # themselves when logging in. Since we need an email address for contacting
+    # the user anyways, we will also use the email for logging in because it is
+    # the most common form of login credential at the time of writing.
+    email = models.EmailField(db_index=True, unique=True)
+
+    # When a user no longer wishes to use our platform, they may try to delete
+    # there account. That's a problem for us because the data we collect is
+    # valuable to us and we don't want to delete it. To solve this problem, we
+    # will simply offer users a way to deactivate their account instead of
+    # letting them delete it. That way they won't show up on the site anymore,
+    # but we can still analyze the data.
+    is_active = models.BooleanField(default=False)
+
+    # The `is_staff` flag is expected by Django to determine who can and cannot
+    # log into the Django admin site. For most users, this flag will always be
+    # falsed.
+    is_staff = models.BooleanField(default=False)
+
+    # A timestamp representing when this object was created.
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    # A timestamp reprensenting when this object was last updated.
+    updated_at = models.DateTimeField(auto_now=True)
+
+    # More fields required by Django when specifying a custom user model.
+
+    # The `USERNAME_FIELD` property tells us which field we will use to log in.
+    # In this case, we want that to be the email field.
+    USERNAME_FIELD = 'email'
+    REQUIRED_FIELDS = ['username']
+
+    # Tells Django that the UserManager class defined above should manage
+    # objects of this type.
+    objects = UserManager()
+
+    def __str__(self):
+        """
+        Returns a string representation of this `User`.
+
+        This string is used when a `User` is printed in the console.
+        """
+        return self.email
+
+    @property
+    def get_full_name(self):
+        """
+        This method is required by Django for things like handling emails.
+        Typically, this would be the user's first and last name. Since we do
+        not store the user's real name, we return their username instead.
+        """
+        return self.username
+
+    def get_short_name(self):
+        """
+        This method is required by Django for things like handling emails.
+        Typically, this would be the user's first name. Since we do not store
+        the user's real name, we return their username instead.
+        """
+        return self.username
+
+    def json(self):
+        """
+        This function converts the model's data into a dict object that can
+        be converted into a json string.
+        """
+
+        return {
+            "username": self.username,
+            "email": self.email
         }
-
-        return Response(response_message, status=status.HTTP_201_CREATED)
-
-
-class LoginAPIView(CreateAPIView):
-    renderer_classes = (UserJSONRenderer,)
-    serializer_class = LoginSerializer
-
-    def post(self, request):
-        user = request.data.get('user', {})
-
-        # Notice here that we do not call `serializer.save()` like we did for
-        # the registration endpoint. This is because we don't actually have
-        # anything to save. Instead, the `validate` method on our serializer
-        # handles everything we need.
-        
-        serializer = self.serializer_class(data=user)
-        serializer.is_valid(raise_exception=True)
-        
-        return Response(serializer.data, status=status.HTTP_200_OK)
-
-
-class UserRetrieveUpdateAPIView(RetrieveUpdateAPIView):
-    permission_classes = (IsAuthenticated,)
-    renderer_classes = (UserJSONRenderer,)
-    serializer_class = UserSerializer
-
-    def retrieve(self, request, *args, **kwargs):
-        # There is nothing to validate or save here. Instead, we just want the
-        # serializer to handle turning our `User` object into something that
-        # can be JSONified and sent to the client.
-        serializer = self.serializer_class(request.user)
-
-        return Response(serializer.data, status=status.HTTP_200_OK)
-
-    def update(self, request, *args, **kwargs):
-        serializer_data = request.data.get('user', {})
-
-        # Here is that serialize, validate, save pattern we talked about
-        # before.
-        serializer = self.serializer_class(
-            request.user, data=serializer_data, partial=True
-        )
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
-
-        return Response(serializer.data, status=status.HTTP_200_OK)
-
-
-class RequestResetAPIView(CreateAPIView):
-    permission_classes = (AllowAny,)
-    renderer_classes = (UserJSONRenderer,)
-    serializer_class = ResetSerializer
-
-    def post(self, request):
-        user_data = request.data['user']
-
-        serializer = self.serializer_class(data=user_data)
-        serializer.is_valid(raise_exception=True)
-
-        # Pick the token from data
-        token = serializer.data.get('token')
-
-        # Format the email
-        host = request.get_host()
-        protocol = request.scheme
-        resetpage = protocol + '://' + host + '/api/resetpassword/' + token
-        subject = "Password Reset Request"
-        message = (
-            "Hello {user_data} you have requested for a password reset.\n"
-            "If you wish to continue please press this link below\n\n{link}\n\n " # Noqa E501
-            "Else ignore this request.\n "
-            "The link expires in 1 hour".format(user_data=user_data['email'], link=resetpage)) # Noqa E501
-        from_email = EMAIL_HOST_USER
-        to_list = [user_data['email'], EMAIL_HOST_USER]
-
-        # Send the email
-        send_mail(
-            subject,
-            message,
-            from_email,
-            to_list, fail_silently=True
-        )
-
-        # Respond back to the user
-        return Response(
-            {"message": "Check your email for the link",
-                "linker": resetpage},
-            status=status.HTTP_200_OK)
-
-
-class ResetPasswordAPIView(UpdateAPIView):
-    renderer_classes = (UserJSONRenderer,)
-    serializer_class = UserSerializer
-    validation_checker = RegistrationSerializer
-
-    def put(self, request, token, **kwargs):
-        # Decode token
-        decoded = Authentication.decode_jwt_token(token)
-
-        # Validate the data
-        self.validation_checker.validate_password(
-            None,
-            request.data['user']['password'])
-
-        # Find the user instance with the the decoded username
-        user = User.objects.get(username=decoded['username'])
-
-        # Update the password
-        self.serializer_class.update(
-            None,
-            user,
-            {
-                "password": request.data['user']['password']
-            }
-        )
-
-        # Respond back to the user
-        return Response(
-            {"message": "Your password was successfully changed"},
-            status=status.HTTP_200_OK)
-
-
-class ActivateAccountAPIView(ListAPIView):
-    permission_classes = (AllowAny,)
-    renderer_classes = (UserJSONRenderer,)
-    serializer_class = UserSerializer
-
-    def get(self, request, **kwargs):
-
-        try:
-            uid64 = kwargs.get('pk')
-            token = kwargs.get('token')
-            uid = urlsafe_base64_decode(uid64).decode()
-            account_details = User.objects.get(pk=uid)
-        except (ValueError, TypeError, User.DoesNotExist):
-            account_details = None
-        finally:
-            valid_token = default_token_generator.check_token(
-                account_details, token=token
-            )
-            if account_details is not None and valid_token is not None:
-                account_details.is_active = True
-                account_details.save()
-                return HttpResponse(
-                    '{} your account has been activated '
-                    'successfully.'.format(account_details.username), status.HTTP_201_CREATED # Noqa E501
-                )
-        return HttpResponse('Invalid activation link')

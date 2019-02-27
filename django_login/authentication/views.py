@@ -11,7 +11,7 @@ from .serializers import (
     LoginSerializer, RegistrationSerializer, UserSerializer,
     ResetSerializer
 )
-from ...settings import EMAIL_HOST_USER
+from django_login.settings import EMAIL_HOST_USER
 from .backends import Authentication
 from django.http import HttpResponse
 from django.contrib.auth.tokens import default_token_generator
