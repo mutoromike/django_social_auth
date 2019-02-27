@@ -30,7 +30,7 @@ ALLOWED_HOSTS = []
 REST_FRAMEWORK = {
 
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        'django_login.django_login.authentication.backends.Authentication',
+        'django_login.authentication.backends.Authentication',
     ),
 
 }
@@ -44,7 +44,8 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
 
-    'rest_framework'
+    'rest_framework',
+    'django_login.authentication'
 
 ]
 
