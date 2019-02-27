@@ -30,7 +30,7 @@ ALLOWED_HOSTS = []
 REST_FRAMEWORK = {
 
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        'django_login.authentication.backends.Authentication',
+        'django_login.apps.authentication.backends.Authentication',
     ),
 
 }
@@ -44,9 +44,13 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
 
+    'rest_framework_swagger',
+    'corsheaders',
     'rest_framework',
     'social_django',
-    'django_login.authentication'
+
+    'django_login.apps.authentication',
+    'django_login.apps.core'
 
 ]
 
@@ -67,7 +71,9 @@ ROOT_URLCONF = 'django_login.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [
+            os.path.join(BASE_DIR, 'djano_login/templates')
+        ],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -205,11 +211,11 @@ AUTH_USER_MODEL = 'authentication.User'
 SOCIAL_AUTH_USER_MODEL = AUTH_USER_MODEL
 
 REST_FRAMEWORK = {
-    # 'EXCEPTION_HANDLER': 'freelance.apps.core.exceptions.core_exception_handler', # Noqa E501
+    'EXCEPTION_HANDLER': 'django_login.core.exceptions.core_exception_handler', # Noqa E501
     'NON_FIELD_ERRORS_KEY': 'error',
 
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        'django_login.authentication.backends.Authentication',
+        'django_login.apps.authentication.backends.Authentication',
     ),
 
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.LimitOffsetPagination', # Noqa E501
@@ -218,7 +224,7 @@ REST_FRAMEWORK = {
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/1.9/howto/static-files/
-STATIC_ROOT = os.path.join(BASE_DIR, 'freelance/staticfiles')
+STATIC_ROOT = os.path.join(BASE_DIR, 'django_login/staticfiles')
 STATIC_URL = '/static/'
 
 # sets session auth to false and dissables the Session login button

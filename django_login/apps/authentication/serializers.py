@@ -5,7 +5,7 @@ from rest_framework import serializers
 from rest_framework.validators import UniqueValidator
 
 # local imports
-from django_login.authentication.models import User
+from django_login.apps.authentication.models import User
 
 from .backends import Authentication
 
